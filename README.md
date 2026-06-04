@@ -1,3 +1,113 @@
+---
+
+## Cerebras Extension — Pruned Benchmark Adapter
+
+> **Pinned commit:** `b3c4521`
+>
+> This fork adds `evalscope_ext`: a difficulty-stratified pruning layer that
+> compresses LiveCodeBench, AA-LCR, and MMMU to 10 % of their original size
+> while preserving model rankings (Spearman rho ≥ 0.85 on 3-model validation).
+
+### Install
+
+```bash
+# 1. Clone this fork and install evalscope in editable mode
+git clone https://github.com/PraanavBhowmik15/evalscope
+cd evalscope
+pip install -e ".[all]"
+
+# 2. Install the pruning extension
+pip install -e ./evalscope_ext
+```
+
+### Quick smoke test
+
+```bash
+# Verify all 3 pruned benchmarks are registered
+python -c "
+import evalscope_ext
+from evalscope.api.registry import BENCHMARK_REGISTRY
+print([k for k in BENCHMARK_REGISTRY if 'pruned' in k])
+# Expected: ['aa_lcr_pruned', 'live_code_bench_pruned', 'mmmu_pruned']
+"
+```
+
+### Run contract
+
+Replace `<model>`, `<api-url>`, and `<api-key>` with your values.
+
+**LiveCodeBench (pruned — 10 %, ~32 problems)**
+
+```bash
+evalscope eval \
+  --model <model> --api-url <api-url> --api-key <api-key> \
+  --eval-type openai_api \
+  --datasets live_code_bench_pruned \
+  --dataset-args '{"live_code_bench_pruned": {"extra_params": {"prune_ratio": 0.1}}}' \
+  --sandbox '{"enabled": true}' \
+  --work-dir ./results_pruned/
+```
+
+**AA-LCR (pruned — 20 %, 20 problems)**
+
+```bash
+evalscope eval \
+  --model <model> --api-url <api-url> --api-key <api-key> \
+  --eval-type openai_api \
+  --datasets aa_lcr_pruned \
+  --dataset-args '{"aa_lcr_pruned": {"extra_params": {"prune_ratio": 0.2}}}' \
+  --work-dir ./results_pruned/
+```
+
+**MMMU (pruned — 10 %, 66 samples, multimodal)**
+
+```bash
+evalscope eval \
+  --model <model> --api-url <api-url> --api-key <api-key> \
+  --eval-type openai_api \
+  --datasets mmmu_pruned \
+  --dataset-args '{"mmmu_pruned": {"extra_params": {"prune_ratio": 0.1}}}' \
+  --work-dir ./results_pruned/
+```
+
+**Compare full vs pruned**
+
+```bash
+python -m evalscope_ext.tools.compare_runs \
+  --full  ./results_full/ \
+  --pruned ./results_pruned/
+```
+
+### Validation results (3-model data, offline)
+
+| Benchmark | Prune ratio | Spearman rho | Verdict |
+|---|---|---|---|
+| LiveCodeBench v5 | 0.1 (32/315) | 1.000 | PASS |
+| AA-LCR | 0.2 (20/100) | 1.000 | PASS |
+| MMMU | 0.1 (66/660) | n/a (1 model) — delta +8.9 pp | PASS |
+
+### Extension structure
+
+```
+evalscope_ext/
+  pruning/
+    mixin.py          # PrunedMixin — universal 2-line adapter base
+    strategy.py       # DifficultyDiversityPruner
+    indices/
+      lcb_indices.json
+      aalcr_indices.json
+      mmmu_indices.json
+  tools/
+    compare_runs.py   # full vs pruned rank-correlation report
+
+evalscope/benchmarks/
+  live_code_bench_pruned/   live_code_bench_pruned_adapter.py
+  aa_lcr_pruned/            aa_lcr_pruned_adapter.py
+  mmmu_pruned/              mmmu_pruned_adapter.py
+```
+
+---
+
 <p align="center">
     <br>
     <img src="docs/en/_static/images/evalscope_logo.png"/>

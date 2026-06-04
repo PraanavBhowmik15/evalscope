@@ -1,17 +1,12 @@
 """
 evalscope_ext — Cerebras benchmark pruning extension for evalscope.
 
-Importing this package registers two new benchmark datasets:
-  - ``live_code_bench_pruned``  (difficulty-stratified subset of LCB v5)
-  - ``aa_lcr_pruned``           (difficulty + source-count stratified subset of AA-LCR)
-
-Usage:
-    import evalscope_ext  # registers benchmarks as a side effect
-    from evalscope import run_task
-    ...
+Provides DifficultyDiversityPruner, PrunedMixin, and pre-computed index files.
+Benchmark registration (live_code_bench_pruned, aa_lcr_pruned, mmmu_pruned) is
+handled by the fork's auto-discovery mechanism in evalscope/benchmarks/.
 """
 
-from . import benchmarks  # noqa: F401 — triggers registration of pruned benchmarks
+from evalscope_ext.pruning import DifficultyDiversityPruner, PrunedMixin  # noqa: F401
 
 __version__ = "0.1.0"
-__all__ = ["benchmarks"]
+__all__ = ["DifficultyDiversityPruner", "PrunedMixin"]

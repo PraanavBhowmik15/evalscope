@@ -43,57 +43,67 @@ from typing import Dict, Optional, Tuple
 # Result parsing
 # ---------------------------------------------------------------------------
 
-def _find_summary_files(root: Path):
-    """Yield (model, benchmark, subset, path) for every review_summary.json found."""
-    for model_dir in root.iterdir():
-        if not model_dir.is_dir():
-            continue
-        for bench_dir in model_dir.iterdir():
-            if not bench_dir.is_dir():
+def _find_report_files(root: Path):
+    """
+    Yield (model, benchmark, path) for every evalscope report JSON found.
+
+    Evalscope 1.8+ output layout::
+
+        <work_dir>/
+            <timestamp>/          <- optional; auto-detected
+                reports/
+                    <model>/
+                        <benchmark>.json
+    """
+    # If root contains a single timestamp dir (auto-created by evalscope), descend into it
+    candidates = [root]
+    timestamp_dirs = [d for d in root.iterdir() if d.is_dir() and d.name != "configs"]
+    if timestamp_dirs and all((d / "reports").is_dir() for d in timestamp_dirs):
+        candidates = timestamp_dirs  # multiple runs; use all
+
+    for base in candidates:
+        reports_dir = base / "reports"
+        if not reports_dir.is_dir():
+            # Fallback: maybe user pointed directly at the reports/ dir
+            reports_dir = base
+        for model_dir in reports_dir.iterdir():
+            if not model_dir.is_dir():
                 continue
-            for subset_dir in bench_dir.iterdir():
-                if not subset_dir.is_dir():
-                    continue
-                summary = subset_dir / "review_summary.json"
-                if summary.exists():
-                    yield model_dir.name, bench_dir.name, subset_dir.name, summary
+            for report_file in model_dir.glob("*.json"):
+                if report_file.name == "report.json":
+                    continue  # aggregate, skip
+                benchmark = report_file.stem
+                yield model_dir.name, benchmark, report_file
 
 
-def _parse_score(summary_path: Path) -> Optional[float]:
-    """Extract the primary accuracy score from a review_summary.json."""
+def _parse_score(report_path: Path) -> Optional[float]:
+    """Extract the primary accuracy score from an evalscope report JSON."""
     try:
-        with open(summary_path, encoding="utf-8") as f:
+        with open(report_path, encoding="utf-8") as f:
             data = json.load(f)
-        # evalscope stores overall metrics under different keys depending on version
-        # Try common patterns
+        # evalscope 1.8+ format: top-level "score" field
+        if "score" in data and isinstance(data["score"], (int, float)):
+            return float(data["score"])
+        # Fallback: first numeric score in metrics list
+        for metric in data.get("metrics", []):
+            if "score" in metric and isinstance(metric["score"], (int, float)):
+                return float(metric["score"])
+        # Legacy / other formats
         for key in ("acc", "pass@1", "accuracy", "mean"):
-            if key in data:
-                val = data[key]
-                if isinstance(val, (int, float)):
-                    return float(val)
-        # Try nested: {"metrics": {"acc": ...}}
-        metrics = data.get("metrics", {})
-        for key in ("acc", "pass@1", "accuracy", "mean"):
-            if key in metrics:
-                val = metrics[key]
-                if isinstance(val, (int, float)):
-                    return float(val)
-        # Try the first numeric leaf in the dict
-        for val in data.values():
-            if isinstance(val, (int, float)):
-                return float(val)
+            if key in data and isinstance(data[key], (int, float)):
+                return float(data[key])
     except Exception as e:
-        print(f"  Warning: could not parse {summary_path}: {e}", file=sys.stderr)
+        print(f"  Warning: could not parse {report_path}: {e}", file=sys.stderr)
     return None
 
 
 def load_scores(results_dir: Path) -> Dict[Tuple[str, str, str], float]:
-    """Return {(model, benchmark, subset): score} for all summaries found."""
+    """Return {(model, benchmark, 'all'): score} for all reports found."""
     scores = {}
-    for model, bench, subset, path in _find_summary_files(results_dir):
+    for model, bench, path in _find_report_files(results_dir):
         score = _parse_score(path)
         if score is not None:
-            scores[(model, bench, subset)] = score
+            scores[(model, bench, "all")] = score
     return scores
 
 
@@ -129,9 +139,9 @@ def spearman_rho(full_scores: list, pruned_scores: list) -> float:
 # ---------------------------------------------------------------------------
 
 def _header(text: str):
-    print(f"\n{'─' * 60}")
+    print(f"\n{'-' * 60}")
     print(f"  {text}")
-    print(f"{'─' * 60}")
+    print(f"{'-' * 60}")
 
 
 def _table(rows, headers):
@@ -141,7 +151,7 @@ def _table(rows, headers):
             col_widths[i] = max(col_widths[i], len(str(cell)))
 
     fmt = "  ".join(f"{{:<{w}}}" for w in col_widths)
-    sep = "  ".join("─" * w for w in col_widths)
+    sep = "  ".join("-" * w for w in col_widths)
     print(fmt.format(*headers))
     print(sep)
     for row in rows:

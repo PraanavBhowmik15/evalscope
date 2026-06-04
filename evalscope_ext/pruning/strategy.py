@@ -22,6 +22,8 @@ _DATASET_TO_FILE = {
     "live_code_bench_pruned":  "lcb_indices.json",
     "aa_lcr":                  "aalcr_indices.json",
     "aa_lcr_pruned":           "aalcr_indices.json",
+    "mmmu":                    "mmmu_indices.json",
+    "mmmu_pruned":             "mmmu_indices.json",
 }
 
 
